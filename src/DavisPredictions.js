@@ -37,7 +37,7 @@ const MARKETS = [
     title: "Willowgrove",
     subtitle: "Measure J/R/D Vote",
     question: "Will Davis voters approve the Willowgrove development?",
-    description: "1,250 new homes on 232 acres in Northeast Davis. Includes community park, transit station, retail/entertainment area, inclusive housing for people with disabilities, and agricultural buffers. Formerly the Shriner\u2019s Property.",
+    description: "1,250 new homes on 232 acres in Northeast Davis. Includes community park, transit station, retail/entertainment area, inclusive housing for people with disabilities, and agricultural buffers. Formerly the Shriner's Property.",
     voteDate: "November 3, 2026",
     status: "Active",
     yesPrice: 38,
@@ -50,7 +50,7 @@ const MARKETS = [
       affordable: "Exceeds city requirements",
       location: "East of Wildhorse, North of Mace Ranch",
       developer: "Davis Eastside LLC",
-      "Council Vote": "Pending \u2014 targeting Nov 2026 ballot",
+      "Council Vote": "Pending — targeting Nov 2026 ballot",
       "Key Context": "First Davis project to release tentative map before voter approval. DEIR released Nov 2025.",
     },
     comments: [
@@ -449,7 +449,7 @@ function TradePanel({ market, user, onClose, onTrade }) {
                   fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 14,
                   cursor: "pointer", textTransform: "uppercase", letterSpacing: 1.5,
                 }}>
-                  {s === "yes" ? "\u2713 Yes" : "\u2717 No"} \u2014 {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
+                  {s === "yes" ? "✓ Yes" : "✗ No"} — {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
                 </button>
               ))}
             </div>
@@ -571,10 +571,10 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
               </span>
             </div>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, fontWeight: 700, color: "#fff", margin: 0, lineHeight: 1.2 }}>{market.title}</h2>
-            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa", marginTop: 4, letterSpacing: 0.5 }}>{market.subtitle} \u00b7 {market.voteDate}</div>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa", marginTop: 4, letterSpacing: 0.5 }}>{market.subtitle} · {market.voteDate}</div>
           </div>
           <div style={{ textAlign: "right", minWidth: 90 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}\u00a2</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}¢</div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>Yes Price</div>
           </div>
         </div>
@@ -583,8 +583,8 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
 
         <PriceBar yesPrice={market.yesPrice} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, marginBottom: 20 }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}\u00a2</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}\u00a2</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}¢</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}¢</span>
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -594,7 +594,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
             color: "#00e6ac", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
             fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
           }}>
-            {user ? `Buy Yes \u2014 ${market.yesPrice}\u00a2` : "\u{1F512} Sign Up to Predict"}
+            {user ? `Buy Yes — ${market.yesPrice}¢` : "🔒 Sign Up to Predict"}
           </button>
           {user && (
             <button onClick={() => onTrade(market)} style={{
@@ -603,7 +603,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
               color: "#ff6b81", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
               fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
             }}>
-              Buy No \u2014 {100 - market.yesPrice}\u00a2
+              Buy No — {100 - market.yesPrice}¢
             </button>
           )}
         </div>
@@ -634,7 +634,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
       }}>
         {expanded ? "Hide Details" : "Project Details & Discussion"}
-        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>\u25be</span>
+        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>▾</span>
       </button>
 
       {expanded && (
@@ -874,8 +874,8 @@ export default function DavisPredictions() {
         {/* Footer */}
         <div style={{ textAlign: "center", padding: "24px 0 0", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#333", lineHeight: 1.6 }}>
-            \u00a9 2026 mydaviscalifornia.com \u00b7 Predictions Market<br />
-            <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a> \u00a0\u00b7\u00a0 <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a> \u00a0\u00b7\u00a0 <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>FAQ</a>
+            © 2026 mydaviscalifornia.com · Predictions Market<br />
+            <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a>  ·  <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a>  ·  <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>FAQ</a>
           </div>
         </div>
       </div>

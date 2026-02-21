@@ -875,7 +875,7 @@ export default function DavisPredictions() {
         <div style={{ textAlign: "center", padding: "24px 0 0", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#333", lineHeight: 1.6 }}>
             \u00a9 2026 mydaviscalifornia.com \u00b7 Predictions Market<br />
-            <a href="#" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a> \u00a0\u00b7\u00a0 <a href="#" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a> \u00a0\u00b7\u00a0 <a href="#" style={{ color: "#555", textDecoration: "none" }}>FAQ</a>
+            <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a> \u00a0\u00b7\u00a0 <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a> \u00a0\u00b7\u00a0 <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>FAQ</a>
           </div>
         </div>
       </div>

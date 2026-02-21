@@ -213,25 +213,86 @@ function SignUpModal({ onComplete, onClose }) {
 }
 
 // ============================================================
+// PAYPAL SCRIPT LOADER
+// ============================================================
+const PAYPAL_CLIENT_ID = "AUBqvRPtHi9jvG48HBlDn-7nTwjZk1XVPk30H0mOaJLnR6mc7UAYEfx9DMhSLAFrFA8tCFaLLbUDYeq9";
+
+function usePayPalScript() {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (window.paypal) { setLoaded(true); return; }
+    const existing = document.querySelector('script[src*="paypal.com/sdk"]');
+    if (existing) { existing.addEventListener("load", () => setLoaded(true)); return; }
+    const script = document.createElement("script");
+    script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD&intent=capture`;
+    script.async = true;
+    script.onload = () => setLoaded(true);
+    document.head.appendChild(script);
+  }, []);
+  return loaded;
+}
+
+// ============================================================
+// PAYPAL BUTTON COMPONENT
+// ============================================================
+function PayPalCheckout({ amount, coins, onSuccess, onError }) {
+  const containerRef = React.useRef(null);
+  const buttonRendered = React.useRef(false);
+
+  useEffect(() => {
+    if (!window.paypal || !containerRef.current || buttonRendered.current) return;
+    buttonRendered.current = true;
+    containerRef.current.innerHTML = "";
+    window.paypal.Buttons({
+      style: { layout: "vertical", color: "gold", shape: "rect", label: "donate", height: 45 },
+      createOrder: function(data, actions) {
+        return actions.order.create({
+          purchase_units: [{
+            amount: { value: amount.toFixed(2), currency_code: "USD" },
+            description: "MyDavisCoins (" + coins + " coins) - Donation to MyDavisCalifornia"
+          }]
+        });
+      },
+      onApprove: function(data, actions) {
+        return actions.order.capture().then(function(details) {
+          onSuccess(coins, details);
+        });
+      },
+      onError: function(err) {
+        console.error("PayPal error:", err);
+        if (onError) onError(err);
+      }
+    }).render(containerRef.current);
+
+    return () => { buttonRendered.current = false; };
+  }, [amount, coins, onSuccess, onError]);
+
+  return React.createElement("div", { ref: containerRef, style: { minHeight: 50, marginTop: 12 } });
+}
+
+// ============================================================
 // WALLET / TOP-UP MODAL
 // ============================================================
 function WalletModal({ user, onClose, onTopUp }) {
   const [selectedPkg, setSelectedPkg] = useState(null);
   const [customAmount, setCustomAmount] = useState("");
   const [showCustom, setShowCustom] = useState(false);
-  const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const paypalLoaded = usePayPalScript();
 
   const customCoins = customAmount ? Math.floor(parseFloat(customAmount) * 50) : 0;
+  const activeAmount = selectedPkg ? selectedPkg.price : (showCustom && parseFloat(customAmount) >= 10 ? parseFloat(customAmount) : 0);
+  const activeCoins = selectedPkg ? selectedPkg.coins : customCoins;
 
-  const handlePurchase = (coins, price) => {
-    setProcessing(true);
-    setTimeout(() => {
-      setProcessing(false);
-      setSuccess(true);
-      onTopUp(coins);
-    }, 1500);
-  };
+  const handlePayPalSuccess = useCallback((coins, details) => {
+    setSuccess(true);
+    onTopUp(coins);
+  }, [onTopUp]);
+
+  const handlePayPalError = useCallback((err) => {
+    setErrorMsg("Payment failed. Please try again.");
+  }, []);
 
   if (success) {
     return (
@@ -286,7 +347,7 @@ function WalletModal({ user, onClose, onTopUp }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
           {COIN_PACKAGES.map((pkg, i) => (
-            <button key={i} onClick={() => { setSelectedPkg(pkg); setShowCustom(false); }} style={{
+            <button key={i} onClick={() => { setSelectedPkg(pkg); setShowCustom(false); setErrorMsg(""); }} style={{
               padding: "18px 14px", borderRadius: 14, border: "2px solid",
               borderColor: selectedPkg === pkg ? "#ffd700" : "rgba(255,255,255,0.06)",
               background: selectedPkg === pkg ? "rgba(255,215,0,0.06)" : "rgba(255,255,255,0.02)",
@@ -314,7 +375,7 @@ function WalletModal({ user, onClose, onTopUp }) {
         </div>
 
         {/* Custom Amount */}
-        <button onClick={() => { setShowCustom(!showCustom); setSelectedPkg(null); }} style={{
+        <button onClick={() => { setShowCustom(!showCustom); setSelectedPkg(null); setErrorMsg(""); }} style={{
           width: "100%", padding: "12px 0", borderRadius: 12, border: "1px solid",
           borderColor: showCustom ? "#ffd700" : "rgba(255,255,255,0.06)",
           background: showCustom ? "rgba(255,215,0,0.04)" : "transparent",
@@ -358,52 +419,52 @@ function WalletModal({ user, onClose, onTopUp }) {
           </div>
         )}
 
-        {/* Donate / Purchase Button */}
-        <button
-          onClick={() => {
-            if (selectedPkg) handlePurchase(selectedPkg.coins, selectedPkg.price);
-            else if (showCustom && parseFloat(customAmount) >= 10) handlePurchase(customCoins, parseFloat(customAmount));
-          }}
-          disabled={processing || (!selectedPkg && (!showCustom || !customAmount || parseFloat(customAmount) < 10))}
-          style={{
-            width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
-            background: (selectedPkg || (showCustom && parseFloat(customAmount) >= 10))
-              ? "linear-gradient(135deg, #ffd700, #f0a000)"
-              : "rgba(255,255,255,0.05)",
-            color: (selectedPkg || (showCustom && parseFloat(customAmount) >= 10)) ? "#000" : "#444",
-            fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 16,
-            cursor: (selectedPkg || (showCustom && parseFloat(customAmount) >= 10)) ? "pointer" : "default",
-            letterSpacing: 0.5, transition: "all 0.2s ease", position: "relative", overflow: "hidden",
-          }}
-        >
-          {processing ? (
-            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid rgba(0,0,0,0.2)", borderTopColor: "#000", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
-              Processing...
-            </span>
-          ) : (
-            selectedPkg
-              ? `Donate $${selectedPkg.price} → Get ${selectedPkg.coins.toLocaleString()} Coins`
-              : showCustom && parseFloat(customAmount) >= 10
-                ? `Donate $${parseFloat(customAmount).toFixed(2)} → Get ${customCoins.toLocaleString()} Coins`
-                : "Select a Package"
-          )}
-        </button>
+        {/* PayPal Button or Loading */}
+        {activeAmount >= 10 && paypalLoaded && (
+          <div style={{ marginTop: 8, marginBottom: 8 }}>
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#aaa", textAlign: "center", marginBottom: 8 }}>
+              Donate <strong style={{ color: "#ffd700" }}>${activeAmount.toFixed(2)}</strong> to get <strong style={{ color: "#ffd700" }}>{activeCoins.toLocaleString()}</strong> MyDavisCoins
+            </div>
+            <PayPalCheckout
+              key={`${activeAmount}-${activeCoins}`}
+              amount={activeAmount}
+              coins={activeCoins}
+              onSuccess={handlePayPalSuccess}
+              onError={handlePayPalError}
+            />
+          </div>
+        )}
 
-        {/* Payment Methods */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16, alignItems: "center" }}>
-          {["PayPal", "Apple Pay", "Card"].map(m => (
-            <span key={m} style={{
-              fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#555",
-              padding: "4px 10px", borderRadius: 6, background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.04)",
-            }}>{m}</span>
-          ))}
-        </div>
+        {activeAmount >= 10 && !paypalLoaded && (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <span style={{ display: "inline-block", width: 20, height: 20, border: "2px solid rgba(255,215,0,0.3)", borderTopColor: "#ffd700", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+            <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa", marginTop: 8 }}>Loading payment options...</div>
+          </div>
+        )}
+
+        {activeAmount > 0 && activeAmount < 10 && (
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#ff6b81", textAlign: "center", padding: "12px 0" }}>
+            Minimum donation is $10.00
+          </div>
+        )}
+
+        {!activeAmount && (
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#444", textAlign: "center", padding: "16px 0" }}>
+            Select a package or enter a custom amount above
+          </div>
+        )}
+
+        {/* Error Message */}
+        {errorMsg && (
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#ff4757", textAlign: "center", padding: "8px 0" }}>
+            {errorMsg}
+          </div>
+        )}
 
         <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#333", textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
           Donations support mydaviscalifornia.com local community content.<br />
-          MyDavisCoins have no cash value and are non-refundable.
+          MyDavisCoins have no cash value and are non-refundable.<br />
+          <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a> · <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a>
         </p>
       </div>
     </div>

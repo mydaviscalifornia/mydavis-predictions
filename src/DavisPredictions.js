@@ -800,7 +800,7 @@ export default function DavisPredictions() {
       }}>
         <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #00c896, #6644cc)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: 18, color: "#fff" }}>D</div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #00c896, #6644cc)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: 18, color: "#fff" }}>MDC</div>
             <div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: -0.3 }}>mydaviscalifornia</div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1.5 }}>Predictions</div>

@@ -1,4 +1,100 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { initializeApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+
+// ============================================================
+// FIREBASE SETUP
+// ============================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyC3wRwP3q9v5EqanPQWOXNcT0Y_njTjEaE",
+  authDomain: "mydavis-predictions.firebaseapp.com",
+  projectId: "mydavis-predictions",
+  storageBucket: "mydavis-predictions.firebasestorage.app",
+  messagingSenderId: "821463803199",
+  appId: "1:821463803199:web:888e0753f8bde948659f8a"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ============================================================
+// FIRESTORE HELPERS
+// ============================================================
+async function createUserDoc(uid, displayName, email) {
+  await setDoc(doc(db, "users", uid), {
+    displayName,
+    email,
+    balance: 100,
+    totalDeposited: 0,
+    totalWon: 0,
+    totalLost: 0,
+    netPnL: 0,
+    marketsParticipated: 0,
+    correctPredictions: 0,
+    signupBonusClaimed: true,
+    createdAt: serverTimestamp(),
+  });
+  await addDoc(collection(db, "transactions"), {
+    userId: uid,
+    type: "signup_bonus",
+    amount: 100,
+    description: "Welcome bonus - 100 free MyDavisCoins",
+    createdAt: serverTimestamp(),
+  });
+}
+
+async function getUserDoc(uid) {
+  const snap = await getDoc(doc(db, "users", uid));
+  if (snap.exists()) return { uid, ...snap.data() };
+  return null;
+}
+
+async function addCoinsToUser(uid, coins, dollarAmount, paypalOrderId) {
+  await updateDoc(doc(db, "users", uid), {
+    balance: increment(coins),
+    totalDeposited: increment(coins),
+  });
+  await addDoc(collection(db, "transactions"), {
+    userId: uid,
+    type: "deposit",
+    amount: coins,
+    dollarAmount,
+    paypalOrderId: paypalOrderId || null,
+    description: `Donated $${dollarAmount} - received ${coins} MyDavisCoins`,
+    createdAt: serverTimestamp(),
+  });
+}
+
+async function placeTrade(uid, marketId, marketTitle, side, coinsSpent, shares, price) {
+  await updateDoc(doc(db, "users", uid), {
+    balance: increment(-coinsSpent),
+  });
+  await addDoc(collection(db, "positions"), {
+    userId: uid,
+    marketId,
+    side,
+    shares,
+    avgPrice: price,
+    totalInvested: coinsSpent,
+    status: "open",
+    payout: 0,
+    profitLoss: 0,
+    createdAt: serverTimestamp(),
+  });
+  await addDoc(collection(db, "transactions"), {
+    userId: uid,
+    type: "trade_buy",
+    amount: coinsSpent,
+    marketId,
+    side,
+    shares,
+    priceAtTrade: price,
+    description: `Bought ${shares} ${side.toUpperCase()} shares on ${marketTitle} at ${price} coins`,
+    createdAt: serverTimestamp(),
+  });
+}
 
 // ============================================================
 // DATA
@@ -50,7 +146,7 @@ const MARKETS = [
       affordable: "Exceeds city requirements",
       location: "East of Wildhorse, North of Mace Ranch",
       developer: "Davis Eastside LLC",
-      "Council Vote": "Pending — targeting Nov 2026 ballot",
+      "Council Vote": "Pending \u2014 targeting Nov 2026 ballot",
       "Key Context": "First Davis project to release tentative map before voter approval. DEIR released Nov 2025.",
     },
     comments: [
@@ -139,55 +235,85 @@ function CoinIcon({ size = 16 }) {
 }
 
 // ============================================================
-// SIGN UP MODAL
+// AUTH MODAL (Sign Up + Log In)
 // ============================================================
-function SignUpModal({ onComplete, onClose }) {
+function AuthModal({ onComplete, onClose }) {
+  const [mode, setMode] = useState("signup"); // "signup" or "login"
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async () => {
+    if (!name || !email || !password) return;
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await createUserDoc(cred.user.uid, name, email);
+      const userData = await getUserDoc(cred.user.uid);
+      setStep(1);
+      setTimeout(() => onComplete(userData), 100);
+    } catch (err) {
+      if (err.code === "auth/email-already-in-use") {
+        setError("This email already has an account. Switch to Log In.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password must be at least 6 characters.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleLogIn = async () => {
+    if (!email || !password) return;
+    setLoading(true);
+    setError("");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const userData = await getUserDoc(cred.user.uid);
+      if (userData) {
+        onComplete(userData);
+      } else {
+        setError("Account data not found. Please contact support.");
+      }
+    } catch (err) {
+      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
+        setError("Email or password is incorrect.");
+      } else if (err.code === "auth/wrong-password") {
+        setError("Email or password is incorrect.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many attempts. Please wait a few minutes.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    }
+    setLoading(false);
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)", color: "#fff", fontSize: 15, fontFamily: "'DM Sans', sans-serif",
+    outline: "none", boxSizing: "border-box",
+  };
+
+  const labelStyle = {
+    fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa",
+    textTransform: "uppercase", letterSpacing: 1.2, display: "block", marginBottom: 6,
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, animation: "fadeIn 0.2s ease" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 420, width: "92%", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
-        {step === 0 && (
-          <>
-            <div style={{ textAlign: "center", marginBottom: 28 }}>
-              <div style={{ fontSize: 56, marginBottom: 12, animation: "float 3s ease-in-out infinite" }}>🪙</div>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: "#fff", margin: "0 0 8px", fontWeight: 900 }}>Get 100 Free MyDavisCoins</h2>
-              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#8888aa", margin: 0, lineHeight: 1.5 }}>
-                Sign up to start predicting outcomes of Davis development votes. No credit card required.
-              </p>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1.2, display: "block", marginBottom: 6 }}>Display Name</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="DavisLocal2026" style={{
-                width: "100%", padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
-                background: "rgba(255,255,255,0.03)", color: "#fff", fontSize: 15, fontFamily: "'DM Sans', sans-serif",
-                outline: "none", boxSizing: "border-box",
-              }} />
-            </div>
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1.2, display: "block", marginBottom: 6 }}>Email</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@davis.com" style={{
-                width: "100%", padding: "13px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)",
-                background: "rgba(255,255,255,0.03)", color: "#fff", fontSize: 15, fontFamily: "'DM Sans', sans-serif",
-                outline: "none", boxSizing: "border-box",
-              }} />
-            </div>
-            <button onClick={() => name && email && setStep(1)} disabled={!name || !email} style={{
-              width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
-              background: name && email ? "linear-gradient(135deg, #ffd700, #f0a000)" : "rgba(255,255,255,0.05)",
-              color: name && email ? "#000" : "#444", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
-              fontSize: 16, cursor: name && email ? "pointer" : "default", letterSpacing: 0.5,
-            }}>
-              Claim My 100 Free Coins
-            </button>
-            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#444", textAlign: "center", marginTop: 12 }}>
-              By signing up you agree to our Terms of Service
-            </p>
-          </>
-        )}
-        {step === 1 && (
+
+        {step === 1 ? (
+          /* SUCCESS STATE */
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 26, color: "#fff", margin: "0 0 8px" }}>Welcome, {name}!</h2>
@@ -198,7 +324,7 @@ function SignUpModal({ onComplete, onClose }) {
             <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#8888aa", margin: "0 0 24px", lineHeight: 1.5 }}>
               MyDavisCoins have been added to your wallet. Start predicting!
             </p>
-            <button onClick={() => onComplete({ name, email, balance: 100 })} style={{
+            <button onClick={onClose} style={{
               width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
               background: "linear-gradient(135deg, #00c896, #00e6ac)", color: "#000",
               fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 16, cursor: "pointer",
@@ -206,6 +332,104 @@ function SignUpModal({ onComplete, onClose }) {
               Start Predicting
             </button>
           </div>
+        ) : mode === "signup" ? (
+          /* SIGN UP FORM */
+          <>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <div style={{ fontSize: 56, marginBottom: 12, animation: "float 3s ease-in-out infinite" }}>🪙</div>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: "#fff", margin: "0 0 8px", fontWeight: 900 }}>Get 100 Free MyDavisCoins</h2>
+              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#8888aa", margin: 0, lineHeight: 1.5 }}>
+                Create your account to start predicting.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,71,87,0.1)", border: "1px solid rgba(255,71,87,0.2)", marginBottom: 16 }}>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#ff6b81", margin: 0 }}>{error}</p>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Display Name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="DavisLocal2026" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Email</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@davis.com" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Password</label>
+              <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="At least 6 characters" style={inputStyle}
+                onKeyDown={e => e.key === "Enter" && handleSignUp()} />
+            </div>
+
+            <button onClick={handleSignUp} disabled={!name || !email || !password || loading} style={{
+              width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
+              background: name && email && password && !loading ? "linear-gradient(135deg, #ffd700, #f0a000)" : "rgba(255,255,255,0.05)",
+              color: name && email && password && !loading ? "#000" : "#444",
+              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 16,
+              cursor: name && email && password && !loading ? "pointer" : "default", letterSpacing: 0.5,
+            }}>
+              {loading ? "Creating Account..." : "Claim My 100 Free Coins"}
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: 16 }}>
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa" }}>Already have an account? </span>
+              <button onClick={() => { setMode("login"); setError(""); }} style={{
+                background: "none", border: "none", color: "#ffd700", cursor: "pointer",
+                fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, padding: 0,
+              }}>Log In</button>
+            </div>
+
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#444", textAlign: "center", marginTop: 12 }}>
+              By signing up you agree to our Terms of Service
+            </p>
+          </>
+        ) : (
+          /* LOG IN FORM */
+          <>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <div style={{ fontSize: 56, marginBottom: 12 }}>👋</div>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, color: "#fff", margin: "0 0 8px", fontWeight: 900 }}>Welcome Back</h2>
+              <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#8888aa", margin: 0, lineHeight: 1.5 }}>
+                Log in to access your coins and predictions.
+              </p>
+            </div>
+
+            {error && (
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(255,71,87,0.1)", border: "1px solid rgba(255,71,87,0.2)", marginBottom: 16 }}>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#ff6b81", margin: 0 }}>{error}</p>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Email</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@davis.com" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>Password</label>
+              <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Your password" style={inputStyle}
+                onKeyDown={e => e.key === "Enter" && handleLogIn()} />
+            </div>
+
+            <button onClick={handleLogIn} disabled={!email || !password || loading} style={{
+              width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
+              background: email && password && !loading ? "linear-gradient(135deg, #00c896, #00e6ac)" : "rgba(255,255,255,0.05)",
+              color: email && password && !loading ? "#000" : "#444",
+              fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 16,
+              cursor: email && password && !loading ? "pointer" : "default", letterSpacing: 0.5,
+            }}>
+              {loading ? "Logging In..." : "Log In"}
+            </button>
+
+            <div style={{ textAlign: "center", marginTop: 16 }}>
+              <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa" }}>Need an account? </span>
+              <button onClick={() => { setMode("signup"); setError(""); }} style={{
+                background: "none", border: "none", color: "#ffd700", cursor: "pointer",
+                fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 700, padding: 0,
+              }}>Sign Up Free</button>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -236,8 +460,8 @@ function usePayPalScript() {
 // PAYPAL BUTTON COMPONENT
 // ============================================================
 function PayPalCheckout({ amount, coins, onSuccess, onError }) {
-  const containerRef = React.useRef(null);
-  const buttonRendered = React.useRef(false);
+  const containerRef = useRef(null);
+  const buttonRendered = useRef(false);
 
   useEffect(() => {
     if (!window.paypal || !containerRef.current || buttonRendered.current) return;
@@ -285,10 +509,17 @@ function WalletModal({ user, onClose, onTopUp }) {
   const activeAmount = selectedPkg ? selectedPkg.price : (showCustom && parseFloat(customAmount) >= 10 ? parseFloat(customAmount) : 0);
   const activeCoins = selectedPkg ? selectedPkg.coins : customCoins;
 
-  const handlePayPalSuccess = useCallback((coins, details) => {
-    setSuccess(true);
-    onTopUp(coins);
-  }, [onTopUp]);
+  const handlePayPalSuccess = useCallback(async (coins, details) => {
+    try {
+      const orderId = details && details.id ? details.id : "unknown";
+      await addCoinsToUser(user.uid, coins, activeAmount, orderId);
+      setSuccess(true);
+      onTopUp(coins);
+    } catch (err) {
+      console.error("Error adding coins:", err);
+      setErrorMsg("Payment received but error adding coins. Please contact support.");
+    }
+  }, [onTopUp, user.uid, activeAmount]);
 
   const handlePayPalError = useCallback((err) => {
     setErrorMsg("Payment failed. Please try again.");
@@ -316,7 +547,6 @@ function WalletModal({ user, onClose, onTopUp }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 480, width: "92%", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, color: "#fff", margin: 0 }}>My Wallet</h2>
@@ -329,7 +559,6 @@ function WalletModal({ user, onClose, onTopUp }) {
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.05)", border: "none", color: "#8888aa", width: 36, height: 36, borderRadius: 10, cursor: "pointer", fontSize: 18 }}>✕</button>
         </div>
 
-        {/* Info Box */}
         <div style={{
           padding: "14px 18px", borderRadius: 14, marginBottom: 24,
           background: "linear-gradient(135deg, rgba(255,215,0,0.06), rgba(240,160,0,0.03))",
@@ -340,7 +569,6 @@ function WalletModal({ user, onClose, onTopUp }) {
           </p>
         </div>
 
-        {/* Packages */}
         <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>
           Get More MyDavisCoins
         </div>
@@ -374,7 +602,6 @@ function WalletModal({ user, onClose, onTopUp }) {
           ))}
         </div>
 
-        {/* Custom Amount */}
         <button onClick={() => { setShowCustom(!showCustom); setSelectedPkg(null); setErrorMsg(""); }} style={{
           width: "100%", padding: "12px 0", borderRadius: 12, border: "1px solid",
           borderColor: showCustom ? "#ffd700" : "rgba(255,255,255,0.06)",
@@ -383,7 +610,7 @@ function WalletModal({ user, onClose, onTopUp }) {
           fontSize: 13, cursor: "pointer", marginBottom: showCustom ? 12 : 20,
           transition: "all 0.2s ease", fontWeight: 600,
         }}>
-          {showCustom ? "▾ Custom Amount" : "▸ Custom Amount"}
+          {showCustom ? "\u25be Custom Amount" : "\u25b8 Custom Amount"}
         </button>
 
         {showCustom && (
@@ -419,7 +646,6 @@ function WalletModal({ user, onClose, onTopUp }) {
           </div>
         )}
 
-        {/* PayPal Button or Loading */}
         {activeAmount >= 10 && paypalLoaded && (
           <div style={{ marginTop: 8, marginBottom: 8 }}>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#aaa", textAlign: "center", marginBottom: 8 }}>
@@ -454,7 +680,6 @@ function WalletModal({ user, onClose, onTopUp }) {
           </div>
         )}
 
-        {/* Error Message */}
         {errorMsg && (
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#ff4757", textAlign: "center", padding: "8px 0" }}>
             {errorMsg}
@@ -478,11 +703,25 @@ function TradePanel({ market, user, onClose, onTrade }) {
   const [side, setSide] = useState("yes");
   const [coins, setCoins] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   const price = side === "yes" ? market.yesPrice : (100 - market.yesPrice);
   const shares = coins ? Math.floor((parseFloat(coins) / price) * 100) : 0;
   const payout = shares;
   const canAfford = parseFloat(coins) <= user.balance;
+
+  const handleConfirm = async () => {
+    if (!coins || parseFloat(coins) <= 0 || !canAfford || processing) return;
+    setProcessing(true);
+    try {
+      await placeTrade(user.uid, market.id, market.title, side, parseFloat(coins), shares, price);
+      setConfirmed(true);
+      onTrade(parseFloat(coins));
+    } catch (err) {
+      console.error("Trade error:", err);
+    }
+    setProcessing(false);
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }} onClick={onClose}>
@@ -510,7 +749,7 @@ function TradePanel({ market, user, onClose, onTrade }) {
                   fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 14,
                   cursor: "pointer", textTransform: "uppercase", letterSpacing: 1.5,
                 }}>
-                  {s === "yes" ? "✓ Yes" : "✗ No"} — {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
+                  {s === "yes" ? "\u2713 Yes" : "\u2717 No"} \u2014 {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
                 </button>
               ))}
             </div>
@@ -566,19 +805,19 @@ function TradePanel({ market, user, onClose, onTrade }) {
             )}
 
             <button
-              onClick={() => parseFloat(coins) > 0 && canAfford && (setConfirmed(true), onTrade(parseFloat(coins)))}
-              disabled={!coins || parseFloat(coins) <= 0 || !canAfford}
+              onClick={handleConfirm}
+              disabled={!coins || parseFloat(coins) <= 0 || !canAfford || processing}
               style={{
                 width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
-                background: parseFloat(coins) > 0 && canAfford
+                background: parseFloat(coins) > 0 && canAfford && !processing
                   ? (side === "yes" ? "linear-gradient(135deg, #00c896, #00e6ac)" : "linear-gradient(135deg, #ff4757, #ff6b81)")
                   : "rgba(255,255,255,0.05)",
                 color: parseFloat(coins) > 0 && canAfford ? "#000" : "#444",
                 fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 16,
-                cursor: parseFloat(coins) > 0 && canAfford ? "pointer" : "default",
+                cursor: parseFloat(coins) > 0 && canAfford && !processing ? "pointer" : "default",
               }}
             >
-              {parseFloat(coins) > 0 && canAfford ? `Predict ${side.toUpperCase()}` : "Enter Amount"}
+              {processing ? "Placing Prediction..." : (parseFloat(coins) > 0 && canAfford ? `Predict ${side.toUpperCase()}` : "Enter Amount")}
             </button>
           </>
         ) : (
@@ -635,7 +874,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa", marginTop: 4, letterSpacing: 0.5 }}>{market.subtitle} · {market.voteDate}</div>
           </div>
           <div style={{ textAlign: "right", minWidth: 90 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}¢</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}\u00a2</div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>Yes Price</div>
           </div>
         </div>
@@ -644,8 +883,8 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
 
         <PriceBar yesPrice={market.yesPrice} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, marginBottom: 20 }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}¢</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}¢</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}\u00a2</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}\u00a2</span>
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -655,7 +894,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
             color: "#00e6ac", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
             fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
           }}>
-            {user ? `Buy Yes — ${market.yesPrice}¢` : "🔒 Sign Up to Predict"}
+            {user ? `Buy Yes \u2014 ${market.yesPrice}\u00a2` : "\uD83D\uDD12 Sign Up to Predict"}
           </button>
           {user && (
             <button onClick={() => onTrade(market)} style={{
@@ -664,12 +903,11 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
               color: "#ff6b81", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
               fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
             }}>
-              Buy No — {100 - market.yesPrice}¢
+              Buy No \u2014 {100 - market.yesPrice}\u00a2
             </button>
           )}
         </div>
 
-        {/* Stats */}
         <div style={{ display: "flex", marginBottom: 20, background: "rgba(255,255,255,0.02)", borderRadius: 12, overflow: "hidden" }}>
           {[
             { label: "Volume", value: <><CoinIcon size={12} /> {formatMoney(market.volume)}</> },
@@ -687,7 +925,6 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
         </div>
       </div>
 
-      {/* Expand Toggle */}
       <button onClick={onToggle} style={{
         width: "100%", padding: "14px 28px", background: "rgba(255,255,255,0.02)",
         border: "none", borderTop: "1px solid rgba(255,255,255,0.04)",
@@ -695,7 +932,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
       }}>
         {expanded ? "Hide Details" : "Project Details & Discussion"}
-        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>▾</span>
+        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>\u25be</span>
       </button>
 
       {expanded && (
@@ -744,11 +981,28 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
 // ============================================================
 export default function DavisPredictions() {
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
-  const [showSignUp, setShowSignUp] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
   const [tradeMarket, setTradeMarket] = useState(null);
   const [scrollY, setScrollY] = useState(0);
+
+  // Listen for Firebase auth state changes (persists across sessions)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userData = await getUserDoc(firebaseUser.uid);
+        if (userData) {
+          setUser(userData);
+        }
+      } else {
+        setUser(null);
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
@@ -756,18 +1010,36 @@ export default function DavisPredictions() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const handleSignUpComplete = useCallback((userData) => {
+  const handleAuthComplete = useCallback((userData) => {
     setUser(userData);
-    setShowSignUp(false);
+    setShowAuth(false);
   }, []);
 
   const handleTopUp = useCallback((coins) => {
-    setUser(prev => ({ ...prev, balance: prev.balance + coins }));
+    setUser(prev => prev ? { ...prev, balance: prev.balance + coins } : prev);
   }, []);
 
   const handleTrade = useCallback((spent) => {
-    setUser(prev => ({ ...prev, balance: prev.balance - spent }));
+    setUser(prev => prev ? { ...prev, balance: prev.balance - spent } : prev);
   }, []);
+
+  const handleLogOut = useCallback(async () => {
+    await signOut(auth);
+    setUser(null);
+  }, []);
+
+  // Loading state while checking auth
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#0a0a16", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <span style={{ display: "inline-block", width: 32, height: 32, border: "3px solid rgba(255,215,0,0.2)", borderTopColor: "#ffd700", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#6666aa", marginTop: 12 }}>Loading...</div>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a16", color: "#fff", position: "relative", overflow: "hidden" }}>
@@ -786,7 +1058,6 @@ export default function DavisPredictions() {
         input[type=number] { -moz-appearance: textfield; }
       `}</style>
 
-      {/* Background Effects */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,200,150,0.06) 0%, transparent 60%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(100,80,200,0.04) 0%, transparent 50%)" }} />
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", opacity: 0.03, backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
 
@@ -800,7 +1071,7 @@ export default function DavisPredictions() {
       }}>
         <div style={{ maxWidth: 800, margin: "0 auto", padding: "0 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #00c896, #6644cc)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: 18, color: "#fff" }}>?</div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #00c896, #6644cc)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: 18, color: "#fff" }}>D</div>
             <div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: -0.3 }}>mydaviscalifornia</div>
               <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1.5 }}>Predictions</div>
@@ -820,15 +1091,16 @@ export default function DavisPredictions() {
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: "#ffd700", fontWeight: 600 }}>{user.balance.toLocaleString()}</span>
                   <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 10, color: "#aa8800", fontWeight: 700, marginLeft: 4 }}>+ ADD</span>
                 </button>
-                <div style={{
+                <div onClick={handleLogOut} title="Log Out" style={{
                   width: 34, height: 34, borderRadius: 10,
                   background: "linear-gradient(135deg, #00c896, #0088ff)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans', sans-serif", color: "#fff",
-                }}>{user.name[0].toUpperCase()}</div>
+                  cursor: "pointer",
+                }}>{user.displayName ? user.displayName[0].toUpperCase() : "?"}</div>
               </>
             ) : (
-              <button onClick={() => setShowSignUp(true)} style={{
+              <button onClick={() => setShowAuth(true)} style={{
                 padding: "8px 20px", borderRadius: 12, border: "none",
                 background: "linear-gradient(135deg, #ffd700, #f0a000)",
                 color: "#000", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
@@ -854,9 +1126,8 @@ export default function DavisPredictions() {
           Predict the outcomes of Davis Measure J/R/D votes. Two major housing developments head to the ballot in 2026. Put your local knowledge to work.
         </p>
 
-        {/* Free coins CTA for logged out users */}
         {!user && (
-          <button onClick={() => setShowSignUp(true)} style={{
+          <button onClick={() => setShowAuth(true)} style={{
             display: "inline-flex", alignItems: "center", gap: 10,
             padding: "14px 28px", borderRadius: 14, border: "none",
             background: "linear-gradient(135deg, #ffd700, #f0a000)",
@@ -869,12 +1140,11 @@ export default function DavisPredictions() {
           </button>
         )}
 
-        {/* How It Works */}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           {[
-            { icon: "🪙", label: "Get coins", desc: "100 free at signup" },
-            { icon: "🎯", label: "Predict", desc: "Buy Yes or No shares" },
-            { icon: "🏆", label: "Win coins", desc: "If your prediction is right" },
+            { icon: "\uD83E\uDE99", label: "Get coins", desc: "100 free at signup" },
+            { icon: "\uD83C\uDFAF", label: "Predict", desc: "Buy Yes or No shares" },
+            { icon: "\uD83C\uDFC6", label: "Win coins", desc: "If your prediction is right" },
           ].map((item, i) => (
             <div key={i} style={{
               display: "flex", alignItems: "center", gap: 10,
@@ -899,14 +1169,13 @@ export default function DavisPredictions() {
               market={market}
               user={user}
               onTrade={setTradeMarket}
-              onSignUp={() => setShowSignUp(true)}
+              onSignUp={() => setShowAuth(true)}
               expanded={expandedId === market.id}
               onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
             />
           </div>
         ))}
 
-        {/* Measure J/R/D Info */}
         <div style={{
           padding: "20px 24px", borderRadius: 16,
           background: "linear-gradient(135deg, rgba(100,68,204,0.08), rgba(0,200,150,0.05))",
@@ -922,7 +1191,6 @@ export default function DavisPredictions() {
           </div>
         </div>
 
-        {/* Disclaimer */}
         <div style={{
           padding: "16px 20px", borderRadius: 14,
           background: "rgba(255,215,0,0.03)", border: "1px solid rgba(255,215,0,0.08)",
@@ -932,7 +1200,6 @@ export default function DavisPredictions() {
           </p>
         </div>
 
-        {/* Footer */}
         <div style={{ textAlign: "center", padding: "24px 0 0", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#333", lineHeight: 1.6 }}>
             © 2026 mydaviscalifornia.com · Predictions Market<br />
@@ -942,7 +1209,7 @@ export default function DavisPredictions() {
       </div>
 
       {/* Modals */}
-      {showSignUp && <SignUpModal onComplete={handleSignUpComplete} onClose={() => setShowSignUp(false)} />}
+      {showAuth && <AuthModal onComplete={handleAuthComplete} onClose={() => setShowAuth(false)} />}
       {showWallet && user && <WalletModal user={user} onClose={() => setShowWallet(false)} onTopUp={handleTopUp} />}
       {tradeMarket && user && <TradePanel market={tradeMarket} user={user} onClose={() => setTradeMarket(null)} onTrade={handleTrade} />}
     </div>

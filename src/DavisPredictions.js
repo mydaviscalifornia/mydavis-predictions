@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from "firebase/firestore";
 
 // ============================================================
 // FIREBASE SETUP
@@ -235,6 +235,33 @@ function CoinIcon({ size = 16 }) {
 }
 
 // ============================================================
+// MODAL OVERLAY (iframe-compatible)
+// ============================================================
+function ModalOverlay({ children, onClose }) {
+  const overlayRef = useRef(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  return (
+    <div ref={overlayRef} onClick={onClose} style={{
+      position: "absolute", top: 0, left: 0, width: "100%", minHeight: "100%",
+      height: "100vh", background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)",
+      display: "flex", alignItems: "flex-start", justifyContent: "center",
+      paddingTop: "8vh", paddingBottom: 40, zIndex: 2000, animation: "fadeIn 0.2s ease",
+      boxSizing: "border-box",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "92%", maxWidth: 420 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // AUTH MODAL (Sign Up + Log In)
 // ============================================================
 function AuthModal({ onComplete, onClose }) {
@@ -309,8 +336,8 @@ function AuthModal({ onComplete, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, animation: "fadeIn 0.2s ease" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 420, width: "92%", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
+    <ModalOverlay onClose={onClose}>
+      <div style={{ background: "#14142a", borderRadius: 24, padding: 36, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)" }}>
 
         {step === 1 ? (
           /* SUCCESS STATE */
@@ -432,7 +459,7 @@ function AuthModal({ onComplete, onClose }) {
           </>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -527,8 +554,8 @@ function WalletModal({ user, onClose, onTopUp }) {
 
   if (success) {
     return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 420, width: "92%", border: "1px solid rgba(255,255,255,0.08)", textAlign: "center" }}>
+      <ModalOverlay onClose={onClose}>
+        <div style={{ background: "#14142a", borderRadius: 24, padding: 36, border: "1px solid rgba(255,255,255,0.08)", textAlign: "center" }}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>✅</div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, color: "#fff", margin: "0 0 8px" }}>Coins Added!</h2>
           <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 14, color: "#8888aa", margin: "0 0 20px" }}>
@@ -540,13 +567,13 @@ function WalletModal({ user, onClose, onTopUp }) {
             fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 15, cursor: "pointer",
           }}>Done</button>
         </div>
-      </div>
+      </ModalOverlay>
     );
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 480, width: "92%", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+    <ModalOverlay onClose={onClose}>
+      <div style={{ background: "#14142a", borderRadius: 24, padding: 36, maxWidth: 480, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "80vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, color: "#fff", margin: 0 }}>My Wallet</h2>
@@ -692,7 +719,7 @@ function WalletModal({ user, onClose, onTopUp }) {
           <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Terms of Service</a> · <a href="/terms" style={{ color: "#555", textDecoration: "none" }}>Privacy Policy</a>
         </p>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -724,8 +751,8 @@ function TradePanel({ market, user, onClose, onTrade }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#14142a", borderRadius: 24, padding: 32, maxWidth: 440, width: "92%", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 80px rgba(0,0,0,0.5)" }}>
+    <ModalOverlay onClose={onClose}>
+      <div style={{ background: "#14142a", borderRadius: 24, padding: 32, maxWidth: 440, border: "1px solid rgba(255,255,255,0.08)", boxShadow: "0 24px 80px rgba(0,0,0,0.5)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
           <div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, color: "#8888aa", textTransform: "uppercase", letterSpacing: 1 }}>Place Prediction</div>
@@ -835,7 +862,7 @@ function TradePanel({ market, user, onClose, onTrade }) {
           </div>
         )}
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

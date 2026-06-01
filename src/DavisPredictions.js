@@ -146,7 +146,7 @@ const MARKETS = [
       affordable: "Exceeds city requirements",
       location: "East of Wildhorse, North of Mace Ranch",
       developer: "Davis Eastside LLC",
-      "Council Vote": "Pending \u2014 targeting Nov 2026 ballot",
+      "Council Vote": "Pending — targeting Nov 2026 ballot",
       "Key Context": "First Davis project to release tentative map before voter approval. DEIR released Nov 2025.",
     },
     comments: [
@@ -637,7 +637,7 @@ function WalletModal({ user, onClose, onTopUp }) {
           fontSize: 13, cursor: "pointer", marginBottom: showCustom ? 12 : 20,
           transition: "all 0.2s ease", fontWeight: 600,
         }}>
-          {showCustom ? "\u25be Custom Amount" : "\u25b8 Custom Amount"}
+          {showCustom ? "▾ Custom Amount" : "▸ Custom Amount"}
         </button>
 
         {showCustom && (
@@ -776,7 +776,7 @@ function TradePanel({ market, user, onClose, onTrade }) {
                   fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: 14,
                   cursor: "pointer", textTransform: "uppercase", letterSpacing: 1.5,
                 }}>
-                  {s === "yes" ? "\u2713 Yes" : "\u2717 No"} \u2014 {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
+                  {s === "yes" ? "✓ Yes" : "✗ No"} — {s === "yes" ? market.yesPrice : 100 - market.yesPrice}
                 </button>
               ))}
             </div>
@@ -901,7 +901,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 13, color: "#6666aa", marginTop: 4, letterSpacing: 0.5 }}>{market.subtitle} · {market.voteDate}</div>
           </div>
           <div style={{ textAlign: "right", minWidth: 90 }}>
-            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}\u00a2</div>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 36, fontWeight: 700, color: market.yesPrice >= 50 ? "#00c896" : "#ff4757", lineHeight: 1 }}>{market.yesPrice}¢</div>
             <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 11, color: "#6666aa", textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>Yes Price</div>
           </div>
         </div>
@@ -910,8 +910,8 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
 
         <PriceBar yesPrice={market.yesPrice} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, marginBottom: 20 }}>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}\u00a2</span>
-          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}\u00a2</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#00c896" }}>Yes {market.yesPrice}¢</span>
+          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "#ff4757" }}>No {100 - market.yesPrice}¢</span>
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
@@ -921,7 +921,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
             color: "#00e6ac", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
             fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
           }}>
-            {user ? `Buy Yes \u2014 ${market.yesPrice}\u00a2` : "\uD83D\uDD12 Sign Up to Predict"}
+            {user ? `Buy Yes — ${market.yesPrice}¢` : "🔒 Sign Up to Predict"}
           </button>
           {user && (
             <button onClick={() => onTrade(market)} style={{
@@ -930,7 +930,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
               color: "#ff6b81", fontFamily: "'DM Sans', sans-serif", fontWeight: 700,
               fontSize: 14, cursor: "pointer", letterSpacing: 0.5,
             }}>
-              Buy No \u2014 {100 - market.yesPrice}\u00a2
+              Buy No — {100 - market.yesPrice}¢
             </button>
           )}
         </div>
@@ -959,7 +959,7 @@ function MarketCard({ market, user, onTrade, onSignUp, expanded, onToggle }) {
         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
       }}>
         {expanded ? "Hide Details" : "Project Details & Discussion"}
-        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>\u25be</span>
+        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s ease", display: "inline-block" }}>▾</span>
       </button>
 
       {expanded && (
@@ -1169,9 +1169,9 @@ export default function DavisPredictions() {
 
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           {[
-            { icon: "\uD83E\uDE99", label: "Get coins", desc: "100 free at signup" },
-            { icon: "\uD83C\uDFAF", label: "Predict", desc: "Buy Yes or No shares" },
-            { icon: "\uD83C\uDFC6", label: "Win coins", desc: "If your prediction is right" },
+            { icon: "🪙", label: "Get coins", desc: "100 free at signup" },
+            { icon: "🎯", label: "Predict", desc: "Buy Yes or No shares" },
+            { icon: "🏆", label: "Win coins", desc: "If your prediction is right" },
           ].map((item, i) => (
             <div key={i} style={{
               display: "flex", alignItems: "center", gap: 10,
